@@ -40,7 +40,7 @@ jobs:
       # 5. Build and Push Docker Image
       - name: Build and Push Image
         run: |
-          docker build . -t ${{ env.LOGIN_SERVER }}/azure-vote-front:latest
+          docker build ./azure-vote -t ${{ env.LOGIN_SERVER }}/azure-vote-front:latest
           docker push ${{ env.LOGIN_SERVER }}/azure-vote-front:latest
 
       # 6. Set AKS Context (Connect to Cluster)
