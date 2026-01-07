@@ -1,0 +1,57 @@
+name: Build and Deploy to AKS
+
+on:
+  push:
+    branches:
+      - master 
+  workflow_dispatch:
+
+env:
+  # These must match the Terraform Output names or Resource names
+  RESOURCE_GROUP: "student-project-rg"
+  CLUSTER_NAME: "student-aks-cluster"
+  DEPLOYMENT_MANIFEST_PATH: "k8s/deployment.yaml"
+
+jobs:
+  build_and_deploy:
+    runs-on: ubuntu-latest
+    steps:
+      # 1. Checkout Code
+      - uses: actions/checkout@v2
+
+      # 2. Log in to Azure
+      - uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      # 3. Get ACR Login Server Name dynamically
+      - name: Get ACR Login Server
+        id: get_acr
+        run: |
+          ACR_NAME=$(az acr list --resource-group ${{ env.RESOURCE_GROUP }} --query "[0].name" -o tsv)
+          LOGIN_SERVER=$(az acr list --resource-group ${{ env.RESOURCE_GROUP }} --query "[0].loginServer" -o tsv)
+          echo "ACR_NAME=$ACR_NAME" >> $GITHUB_ENV
+          echo "LOGIN_SERVER=$LOGIN_SERVER" >> $GITHUB_ENV
+
+      # 4. Login to ACR (Docker)
+      - name: Docker Login to ACR
+        run: az acr login --name ${{ env.ACR_NAME }}
+
+      # 5. Build and Push Docker Image
+      - name: Build and Push Image
+        run: |
+          docker build ./azure-vote -t ${{ env.LOGIN_SERVER }}/azure-vote-front:latest
+          docker push ${{ env.LOGIN_SERVER }}/azure-vote-front:latest
+
+      # 6. Set AKS Context (Connect to Cluster)
+      - uses: azure/aks-set-context@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+          resource-group: ${{ env.RESOURCE_GROUP }}
+          cluster-name: ${{ env.CLUSTER_NAME }}
+
+      # 7. Replace Placeholder in Manifest and Deploy
+      - name: Deploy to Kubernetes
+        run: |
+          sed -i "s|{{ACR_LOGIN_SERVER}}|${{ env.LOGIN_SERVER }}|g" ${{ env.DEPLOYMENT_MANIFEST_PATH }}
+          kubectl apply -f ${{ env.DEPLOYMENT_MANIFEST_PATH }}
